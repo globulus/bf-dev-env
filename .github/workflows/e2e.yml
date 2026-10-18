@@ -1,0 +1,62 @@
+name: e2e
+
+# Brings up the whole stack from the main branches and runs the web's Playwright tests.
+on:
+  schedule:
+    - cron: '0 3 * * 1-5'
+  workflow_dispatch:
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: dev-env
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/orders-service
+          path: orders-service
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/catalog-service
+          path: catalog-service
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/web
+          path: web
+
+      - name: Start stack
+        working-directory: dev-env
+        run: docker compose up -d --build --wait --wait-timeout 600
+
+      - name: Seed
+        working-directory: dev-env
+        run: ./seed.sh
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: web/.nvmrc
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Playwright
+        working-directory: web
+        env:
+          E2E_BASE_URL: http://localhost:7080
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+          npx playwright test
+
+      - name: Logs on failure
+        if: failure()
+        working-directory: dev-env
+        run: docker compose logs --tail=200
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: web/playwright-report/

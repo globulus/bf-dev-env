@@ -1,0 +1,71 @@
+# The whole Shopfront product on one machine. See README.md.
+#
+# Services are built from sibling checkouts. Point the *_DIR variables
+# elsewhere (in .env, see .env.example) if your checkouts live somewhere else.
+name: shopfront
+
+services:
+  postgres:
+    build: ./postgres
+    environment:
+      POSTGRES_USER: shopfront
+      POSTGRES_PASSWORD: shopfront
+      POSTGRES_DB: shopfront
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-7432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U shopfront -d shopfront"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  catalog-service:
+    build: ${CATALOG_SERVICE_DIR:-../catalog-service}
+    environment:
+      DB_URL: jdbc:postgresql://postgres:5432/catalog
+      DB_USER: catalog
+      DB_PASSWORD: catalog
+      PORT: "8080"
+    ports:
+      - "127.0.0.1:${CATALOG_PORT:-7082}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  orders-service:
+    build: ${ORDERS_SERVICE_DIR:-../orders-service}
+    environment:
+      DB_URL: jdbc:postgresql://postgres:5432/orders
+      DB_USER: orders
+      DB_PASSWORD: orders
+      CATALOG_BASE_URL: http://catalog-service:8080
+    ports:
+      - "127.0.0.1:${ORDERS_PORT:-7081}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      catalog-service:
+        condition: service_healthy
+
+  web:
+    build: ${WEB_DIR:-../web}
+    environment:
+      ORDERS_API_URL: http://orders-service:8080
+      CATALOG_API_URL: http://catalog-service:8080
+    ports:
+      - "127.0.0.1:${WEB_PORT:-7080}:80"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    depends_on:
+      orders-service:
+        condition: service_healthy
+      catalog-service:
+        condition: service_healthy
+
+volumes:
+  pgdata:
