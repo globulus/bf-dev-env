@@ -188,3 +188,17 @@ acceptance:
     seed: [[./seed.sh]]
     down: [[docker, compose, down, -v]]
 # ci: unset for every repo: the testbed repos have GitHub Actions disabled (D-408).
+overrides:
+  # The testbed runs on the Fable allowance (the maintainer, 2026-10-19): every
+  # agent whose definition names Opus or Sonnet runs on Fable here. The planner,
+  # the reviewers and kb-critic are Fable already.
+  models:
+    coder: claude-fable-5-1
+    feature-qa: claude-fable-5-1
+    integration-e2e: claude-fable-5-1
+    finding-verifier: claude-fable-5-1
+    acceptance-setup: claude-fable-5-1
+    acceptance-tester: claude-fable-5-1
+    kb-synthesizer: claude-fable-5-1
+    onboarder: claude-fable-5-1
+    supervisor: claude-fable-5-1
