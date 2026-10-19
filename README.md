@@ -17,7 +17,10 @@ shopfront/
 ```
 
 If they live elsewhere, copy `.env.example` to `.env` and set `ORDERS_SERVICE_DIR`,
-`CATALOG_SERVICE_DIR` and `WEB_DIR`.
+`CATALOG_SERVICE_DIR` and `WEB_DIR`. `GLOBULI_REPO_ORDERS_SERVICE`,
+`GLOBULI_REPO_CATALOG_SERVICE` and `GLOBULI_REPO_WEB`, when set, win over those: Globuli
+sets them to the checkouts of the stack it starts. `globuli.yaml` is Globuli's settings
+for the whole product.
 
 ## Run it
 

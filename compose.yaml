@@ -2,6 +2,9 @@
 #
 # Services are built from sibling checkouts. Point the *_DIR variables
 # elsewhere (in .env, see .env.example) if your checkouts live somewhere else.
+# Globuli sets GLOBULI_REPO_<NAME> to the checkouts of the run it starts a
+# stack for; those win over the *_DIR variables. COMPOSE_PROJECT_NAME and the
+# *_PORT variables keep two stacks on one machine apart.
 name: shopfront
 
 services:
@@ -22,7 +25,7 @@ services:
       retries: 20
 
   catalog-service:
-    build: ${CATALOG_SERVICE_DIR:-../catalog-service}
+    build: ${GLOBULI_REPO_CATALOG_SERVICE:-${CATALOG_SERVICE_DIR:-../catalog-service}}
     environment:
       DB_URL: jdbc:postgresql://postgres:5432/catalog
       DB_USER: catalog
@@ -35,7 +38,7 @@ services:
         condition: service_healthy
 
   orders-service:
-    build: ${ORDERS_SERVICE_DIR:-../orders-service}
+    build: ${GLOBULI_REPO_ORDERS_SERVICE:-${ORDERS_SERVICE_DIR:-../orders-service}}
     environment:
       DB_URL: jdbc:postgresql://postgres:5432/orders
       DB_USER: orders
@@ -50,7 +53,7 @@ services:
         condition: service_healthy
 
   web:
-    build: ${WEB_DIR:-../web}
+    build: ${GLOBULI_REPO_WEB:-${WEB_DIR:-../web}}
     environment:
       ORDERS_API_URL: http://orders-service:8080
       CATALOG_API_URL: http://catalog-service:8080

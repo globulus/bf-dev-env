@@ -1,0 +1,184 @@
+# Globuli's settings for the Shopfront testbed (docs/brownfield.md, section 2), in the
+# named form: five code repos, dev-env the primary.
+#
+# The primary holds this file on its main, where the daemon reads it (D-217):
+# publish.sh puts it at the root of bf-dev-env. The paths below are the maintainer's
+# checkouts, relative to that root: the seven repos cloned side by side, each in a
+# folder named as below (see README.md, "Running the testbed").
+project: Shop
+globuli: brownfield # the testbed follows Globuli's brownfield branch
+repos:
+  knowledge: ../shop-knowledge
+  runs: ../shop-runs
+github:
+  owner: globulus
+  repos:
+    knowledge: bf-shop-knowledge
+    runs: bf-shop-runs
+# Labels only: Slack posts go to the webhooks in this Mac's Keychain, the same ones
+# IvERP's daemon uses, prefixed with the project's name.
+slack:
+  digest: '#bf-digest'
+  alerts: '#bf-alerts'
+network:
+  docs:
+    - docs.spring.io
+    - docs.gradle.org
+    - maven.apache.org
+    - react.dev
+    - vite.dev
+    - vitest.dev
+    - playwright.dev
+    - openapi-ts.dev
+    - developer.mozilla.org
+    - docs.flutter.dev
+    - api.flutter.dev
+code_repos:
+  dev-env:
+    primary: true
+    github: bf-dev-env
+    path: .
+    toolchain: none
+  orders-service:
+    github: bf-orders-service
+    path: ../orders-service
+    toolchain: gradle
+    # The profile's commands fit: ./gradlew assemble, test (the whole suite: the
+    # known-bug test fails on main and is the baseline's to know), check -x test.
+    test_reports: ['build/test-results/test/*.xml']
+  catalog-service:
+    github: bf-catalog-service
+    path: ../catalog-service
+    toolchain: maven
+    # The profile's commands fit: ./mvnw -B -DskipTests package, ./mvnw -B test.
+    test_reports: ['target/surefire-reports/*.xml']
+  web:
+    github: bf-web
+    path: ../web
+    toolchain: npm
+    commands:
+      # npm test is vitest run; the JUnit report goes to the ignored reports/.
+      test:
+        [[npm, test, --, --reporter=default, --reporter=junit, --outputFile.junit=reports/junit.xml]]
+    test_reports: [reports/junit.xml]
+    tests: { framework: playwright, e2e_dir: e2e/ }
+    targets: [{ name: web, driver: browser }]
+    generated:
+      paths: ['openapi/**', 'src/api/generated/**']
+      regenerate: [[npm, run, api:generate]]
+  mobile:
+    github: bf-mobile
+    path: ../mobile
+    toolchain: flutter
+    commands:
+      # --no-pub: inside srt, flutter test and analyze would ask pub.dev (D-402).
+      test: [[flutter, test, --no-pub, --file-reporter, 'json:build/test-results.json']]
+      lint: [[flutter, analyze, --no-pub]]
+      test_one: [[flutter, test, --no-pub, '{file}', --plain-name, '{title}']]
+    test_reports: [build/test-results.json]
+    tests: { framework: flutter-integration, e2e_dir: integration_test/ }
+    targets:
+      # The debug app talks to localhost:7081 and :7082 unless told otherwise
+      # (lib/config.dart): stack slot 1's ports. The Android emulator reaches the
+      # Mac's 127.0.0.1 as 10.0.2.2; the iOS simulator shares the Mac's network.
+      - name: android
+        driver: android
+        app:
+          build:
+            - [flutter, build, apk, --debug, '--dart-define=ORDERS_API_URL=http://10.0.2.2:7081', '--dart-define=CATALOG_API_URL=http://10.0.2.2:7082']
+          artifact: build/app/outputs/flutter-apk/app-debug.apk
+          id: com.shopfront.shopfront_mobile
+      - name: ios
+        driver: ios
+        app:
+          build: [[flutter, build, ios, --simulator, --debug]]
+          artifact: build/ios/iphonesimulator/Runner.app
+          id: com.shopfront.shopfrontMobile
+    generated:
+      paths: ['openapi/**', 'lib/api/generated/**']
+      regenerate: [[./tool/generate_api.sh]]
+# The services write their specs in a build, offline, with no database (H2).
+contracts:
+  - name: orders-api
+    producer: { repo: orders-service, produce: [[./gradlew, generateOpenApi]], spec: build/openapi/orders.json }
+    consumers: [{ repo: web, spec: openapi/orders.json }, { repo: mobile, spec: openapi/orders.json }]
+  - name: catalog-api
+    producer: { repo: catalog-service, produce: [[./mvnw, -B, -Popenapi, test]], spec: target/openapi/catalog.json }
+    consumers: [{ repo: web, spec: openapi/catalog.json }, { repo: mobile, spec: openapi/catalog.json }]
+intake:
+  linear: { team: GTB, ready_states: [Ready], labels: [globuli] }
+  figma: { max_frames: 8, scale: 2 }
+# Every stack is dev-env's compose file, run in a dev-env checkout. It builds the
+# services and the web from the GLOBULI_REPO_<NAME> checkouts Globuli sets;
+# COMPOSE_PROJECT_NAME and the *_PORT variables keep the stacks apart. Host ports
+# stay in the 7xxx range, clear of IvERP's 8xxx and 9xxx.
+#
+# | Stack                   | Web  | Orders | Catalog | Postgres |
+# |-------------------------|------|--------|---------|----------|
+# | slot 1 (compose's own)  | 7080 | 7081   | 7082    | 7432     |
+# | slot 2                  | 7180 | 7181   | 7182    | 7532     |
+# | preview                 | 7280 | 7281   | 7282    | 7632     |
+# | acceptance, manual      | 7380 | 7381   | 7382    | 7732     |
+# | acceptance, qa          | 7480 | 7481   | 7482    | 7832     |
+stack_slots:
+  - env:
+      COMPOSE_PROJECT_NAME: shopfront-slot1
+      WEB_PORT: 7080
+      ORDERS_PORT: 7081
+      CATALOG_PORT: 7082
+      POSTGRES_PORT: 7432
+      E2E_BASE_URL: http://localhost:7080
+  - env:
+      COMPOSE_PROJECT_NAME: shopfront-slot2
+      WEB_PORT: 7180
+      ORDERS_PORT: 7181
+      CATALOG_PORT: 7182
+      POSTGRES_PORT: 7532
+      E2E_BASE_URL: http://localhost:7180
+preview:
+  url: http://localhost:7280
+  commands:
+    - [docker, compose, up, -d, --build, --wait]
+    - [./seed.sh]
+  env:
+    COMPOSE_PROJECT_NAME: shopfront-preview
+    WEB_PORT: '7280'
+    ORDERS_PORT: '7281'
+    CATALOG_PORT: '7282'
+    POSTGRES_PORT: '7632'
+acceptance:
+  # The seed makes no accounts: there is no login. The address is required and unused.
+  seed_admin_email: maintainer@example.com
+  max_testers: 2
+  persona_hints: |
+    Shopfront has no accounts and no login. The web shop is always the customer
+    web-customer; the mobile app is demo-customer. seed.sh loads 12 products in 4
+    categories and three orders for each of the two customers. There are no roles: every
+    persona is a customer.
+  # The testbed sends no mail (the order confirmation goes to a fake gateway that only
+  # logs), so it has no mail catcher; mail_url is required and names the web.
+  manual:
+    url: http://localhost:7380
+    mail_url: http://localhost:7380
+    env:
+      COMPOSE_PROJECT_NAME: shopfront-manual
+      WEB_PORT: '7380'
+      ORDERS_PORT: '7381'
+      CATALOG_PORT: '7382'
+      POSTGRES_PORT: '7732'
+    commands: [[docker, compose, up, -d, --build, --wait]]
+    seed: [[./seed.sh]]
+    down: [[docker, compose, down, -v]]
+  qa:
+    url: http://localhost:7480
+    mail_url: http://localhost:7480
+    env:
+      COMPOSE_PROJECT_NAME: shopfront-qa
+      WEB_PORT: '7480'
+      ORDERS_PORT: '7481'
+      CATALOG_PORT: '7482'
+      POSTGRES_PORT: '7832'
+    commands: [[docker, compose, up, -d, --build, --wait]]
+    seed: [[./seed.sh]]
+    down: [[docker, compose, down, -v]]
+# ci: unset for every repo: the testbed repos have GitHub Actions disabled (D-408).
