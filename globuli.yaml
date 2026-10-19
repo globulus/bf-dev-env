@@ -78,22 +78,28 @@ code_repos:
     test_reports: [build/test-results.json]
     tests: { framework: flutter-integration, e2e_dir: integration_test/ }
     targets:
-      # The debug app talks to localhost:7081 and :7082 unless told otherwise
-      # (lib/config.dart): stack slot 1's ports. The Android emulator reaches the
-      # Mac's 127.0.0.1 as 10.0.2.2; the iOS simulator shares the Mac's network.
+      # The app build gets the run's stack slot variables (D-410), so the app
+      # talks to that slot's stack: ORDERS_PORT and CATALOG_PORT below. A run
+      # with no stack slot gets none, and the app slot 1's ports. A command is
+      # no shell, so sh expands them. The Android emulator reaches the Mac's
+      # 127.0.0.1 as 10.0.2.2.
+      # No iOS target until a confined design for simulator runs is chosen: a
+      # simulator app runs as the Mac user, so D-412 refuses iOS device runs
+      # and would hold every mobile item (2026-10-19). To add it back:
+      #   - name: ios
+      #     driver: ios
+      #     app:
+      #       build:
+      #         - [sh, -c, 'exec flutter build ios --simulator --debug --dart-define=ORDERS_API_URL=http://localhost:${ORDERS_PORT:-7081} --dart-define=CATALOG_API_URL=http://localhost:${CATALOG_PORT:-7082}']
+      #       artifact: build/ios/iphonesimulator/Runner.app
+      #       id: com.shopfront.shopfrontMobile
       - name: android
         driver: android
         app:
           build:
-            - [flutter, build, apk, --debug, '--dart-define=ORDERS_API_URL=http://10.0.2.2:7081', '--dart-define=CATALOG_API_URL=http://10.0.2.2:7082']
+            - [sh, -c, 'exec flutter build apk --debug --dart-define=ORDERS_API_URL=http://10.0.2.2:${ORDERS_PORT:-7081} --dart-define=CATALOG_API_URL=http://10.0.2.2:${CATALOG_PORT:-7082}']
           artifact: build/app/outputs/flutter-apk/app-debug.apk
           id: com.shopfront.shopfront_mobile
-      - name: ios
-        driver: ios
-        app:
-          build: [[flutter, build, ios, --simulator, --debug]]
-          artifact: build/ios/iphonesimulator/Runner.app
-          id: com.shopfront.shopfrontMobile
     generated:
       paths: ['openapi/**', 'lib/api/generated/**']
       regenerate: [[./tool/generate_api.sh]]
